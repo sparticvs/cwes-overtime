@@ -181,8 +181,7 @@ if __name__ == "__main__":
             action="store_true", default=False)
     parser.add_argument("-C", "--cols", help="List of Columns to output",
             nargs='*')
-    parser.add_argument("-o", "--options", help="Show column options, then "
-            "exit", action="store_true", default=False)
+    parser.add_argument("-o", "--out", help="Name of CSV output")
     args = parser.parse_args()
     
     cfg = open_or_create_config(args.config)
@@ -215,8 +214,14 @@ if __name__ == "__main__":
 
     # Pivot Results
     pivoted = dict((y,(s,c)) for c, y, s in results)
-
     print(pivoted)
+
+    if args.out is not None:
+        with open(args.out, mode='wt') as csvfile:
+            csvout = csv.writer(csvfile)
+            csvout.writerow(["Count", "Year", "Severity"])
+            csvout.writerows(results)
+
 
 #    print(args.cwes)
 #    print(args.packages)
