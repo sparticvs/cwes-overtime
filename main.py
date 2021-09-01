@@ -9,14 +9,22 @@ from dateutil.parser import isoparse
 from argparse import ArgumentParser
 from configparser import ConfigParser
 from redhat.CVE import *
-from sqlalchemy import create_engine
+from sqlalchemy import (
+        create_engine,
+        select,
+        func,
+        or_,
+        cast,
+        Integer,
+        asc,
+        and_)
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 DEFAULT_CONF_PATH = '~/.config/cwes-overtime/config.cfg'
 #PKG_REGEX = r'-[0-9]+([-_+:\.0-9]+|el[8-9]|module|[a-fA-Fpg]|cvs|hg|svn|git|rc)+$'
 PKG_REGEX = r'^([\/_a-zA-Z]|(?<!-)\d|-(?!\d))+'
 
-logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+logging.basicConfig(stream=sys.stderr, level=logging.WARN)
 log = logging.getLogger(__name__)
 session = sessionmaker()
 
@@ -96,33 +104,16 @@ def get_data(host, query):
         raise ResponseNotOkException
 
     if not r.json():
-        log.warn('No data returned with the following
-                query:'.format(full_query))
+        log.warn('No data returned with the following '
+                    'query:'.format(full_query))
         raise EmptyResponseException
 
     return r.json()
 
-
-if __name__ == "__main__":
-    parser = ArgumentParser(description="Create CSV of CVEs to CWEs over the \
-                                            years for a specific package set")
-    parser.add_argument("-c", "--cwes", help="List of CWEs", nargs='+',
-            required=True)
-    parser.add_argument("-p", "--packages", help="List of Packages", nargs='*')
-    parser.add_argument("--config", help="Override default config path",
-            default=os.path.expanduser(DEFAULT_CONF_PATH))
-    args = parser.parse_args()
-    
-    cfg = open_or_create_config(args.config)
-    log.setLevel(getattr(logging, cfg["default"]["log_level"].upper()))
-
-    open_or_create_cache(cfg["default"]["cache_file"])
-
-    api_host = cfg["default"]["api_host"]
+def update_cache(api_host):
+    rex_patt = re.compile(PKG_REGEX)
     sess = get_session()
 
-    rex_patt = re.compile(PKG_REGEX)
-    
     pg = 0
     try:
         while True:
@@ -166,7 +157,6 @@ if __name__ == "__main__":
 
                     if new_pkg == None:
                         log.debug("Creating Package {}".format(package))
-                        #short_name = rex_patt.sub('', package)
                         short_name = rex_patt.match(package)[0]
                         log.debug("Package Short Name {}".format(short_name))
                         new_pkg = Package(name=package, short_name=short_name)
@@ -179,3 +169,54 @@ if __name__ == "__main__":
     except EmptyResponseException:
         pass
 
+if __name__ == "__main__":
+    parser = ArgumentParser(description="Create CSV of CVEs to CWEs over the \
+                                            years for a specific package set",
+                                            fromfile_prefix_chars='@')
+    parser.add_argument("-c", "--cwes", help="List of CWEs", nargs='*')
+    parser.add_argument("-p", "--packages", help="List of Packages", nargs='*')
+    parser.add_argument("--config", help="Override default config path",
+            default=os.path.expanduser(DEFAULT_CONF_PATH))
+    parser.add_argument("--skip-update", help="Skip updating the local cache",
+            action="store_true", default=False)
+    parser.add_argument("-C", "--cols", help="List of Columns to output",
+            nargs='*')
+    parser.add_argument("-o", "--options", help="Show column options, then "
+            "exit", action="store_true", default=False)
+    args = parser.parse_args()
+    
+    cfg = open_or_create_config(args.config)
+    log.setLevel(getattr(logging, cfg["default"]["log_level"].upper()))
+
+    open_or_create_cache(cfg["default"]["cache_file"])
+
+    if not args.skip_update:
+        update_cache(cfg["default"]["api_host"])
+
+    sess = get_session()
+
+
+    """
+    List of CVEs based on product list
+
+    """
+    pkgs_clause = list(map(lambda p: Package.short_name==p, args.packages))
+    cwes_clause = list(map(lambda c: CVE.cwe.like(c), args.cwes))
+    query = select(func.count(CVE.id).label('cve_count'),
+                   cast(func.strftime('%Y', CVE.public_date).label('year'),
+                       Integer),
+                   CVE.severity).join(CVE.affected_packages).\
+                           where(and_(or_(*pkgs_clause), or_(*cwes_clause))).\
+                           group_by(CVE.severity, 'year').\
+                           order_by(asc('year'))
+
+    log.debug(query)
+    results = sess.execute(query).all()
+
+    # Pivot Results
+    pivoted = dict((y,(s,c)) for c, y, s in results)
+
+    print(pivoted)
+
+#    print(args.cwes)
+#    print(args.packages)
