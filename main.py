@@ -204,22 +204,23 @@ if __name__ == "__main__":
     query = select(func.count(CVE.id).label('cve_count'),
                    cast(func.strftime('%Y', CVE.public_date).label('year'),
                        Integer),
-                   CVE.severity).join(CVE.affected_packages).\
+                   CVE.severity, Package.short_name).join(CVE.affected_packages).\
                            where(and_(or_(*pkgs_clause), or_(*cwes_clause))).\
-                           group_by(CVE.severity, 'year').\
+                           group_by(CVE.severity, 'year', Package.short_name).\
                            order_by(asc('year'))
 
     log.debug(query)
     results = sess.execute(query).all()
+    print(results)
 
     # Pivot Results
-    pivoted = dict((y,(s,c)) for c, y, s in results)
+    pivoted = dict((p,(y,s,c)) for c, y, s, p in results)
     print(pivoted)
 
     if args.out is not None:
         with open(args.out, mode='wt') as csvfile:
             csvout = csv.writer(csvfile)
-            csvout.writerow(["Count", "Year", "Severity"])
+            csvout.writerow(["Count", "Year", "Severity", "Package"])
             csvout.writerows(results)
 
 
