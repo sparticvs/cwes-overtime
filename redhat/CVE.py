@@ -53,13 +53,6 @@ class RHSA(Base):
     id = Column(Integer, primary_key=True)
     rhsa = Column(String, unique=True)
 
-"""
-class Advisory(Base):
-    __tablename__ = 'advisories'
-
-    cve_id = Column('cve_id', ForeignKey('CVE.id'), primary_key=True)
-    rhsa_id = Column('rhsa_id', ForeignKey('RHSA.id'), primary_key=True)
-"""
 
 class Package(Base):
     __tablename__ = 'packages'
@@ -67,11 +60,3 @@ class Package(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True)
     short_name = Column(String)
-
-"""
-class AffectedPackage(Base):
-    __tablename__ = 'affected_packages'
-
-    cve_id = Column(ForeignKey('CVE.id'), primary_key=True)
-    package_id = Column(ForeignKey('Package.id'), primary_key=True)
-"""
